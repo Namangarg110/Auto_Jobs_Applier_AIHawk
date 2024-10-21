@@ -411,3 +411,7 @@ func_summarize_prompt_template = """
         {text_with_placeholders}
         
         ## Text without placeholders:"""
+
+connection_request_prompt_template = """
+Using the following job description: ‘{job_description}’, craft a brief, professional LinkedIn connection request message for a recruiter. Mention that I’m reaching out regarding this position at the company. Keep it friendly, concise, and under 300 characters. Avoid placeholders (e.g., [Recruiter Name]) and limit experience to no more than 2 years. Best Regards, Naman Garg
+"""

@@ -399,6 +399,26 @@ class GPTAnswerer:
         logger.debug(f"Setting job application profile: {job_application_profile}")
         self.job_application_profile = job_application_profile
 
+    def generate_message_from_job_description(self, job_description: str) -> str:
+        logger.debug(f"Generating connection request message from job description: {job_description}")
+        
+        # Preprocess the prompt template for the message generation
+        strings.connection_request_prompt_template = self._preprocess_template_string(
+            strings.connection_request_prompt_template
+        )
+
+        # Create a prompt template with the job description passed as a variable
+        prompt = ChatPromptTemplate.from_template(strings.connection_request_prompt_template)
+        
+        # Define the chain of operations to generate the message
+        chain = prompt | self.llm_cheap | StrOutputParser()
+
+        # Invoke the GPT model with the job description
+        output = chain.invoke({"job_description": job_description})
+
+        logger.debug(f"Generated connection request message: {output}")
+        return output
+        
     def summarize_job_description(self, text: str) -> str:
         logger.debug(f"Summarizing job description: {text}")
         strings.summarize_prompt_template = self._preprocess_template_string(

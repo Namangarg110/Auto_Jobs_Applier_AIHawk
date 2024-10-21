@@ -11,7 +11,6 @@ from httpx import HTTPStatusError
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from reportlab.pdfbase.pdfmetrics import stringWidth
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -91,6 +90,81 @@ class AIHawkEasyApplier:
         except Exception as e:
             logger.error(f"Failed to apply to job: {job.title}, error: {str(e)}")
             raise e
+
+    def send_connection_request_with_note(self, recruiter_link: str, note_message: str):
+        """
+        Sends a connection request with a custom note to the recruiter using ActionChains.
+        
+        :param recruiter_link: The LinkedIn profile link of the recruiter.
+        :param note_message: The custom message to send in the connection request.
+        """
+        try:
+            logger.debug(f"Navigating to recruiter profile: {recruiter_link}")
+            self.driver.get(recruiter_link)
+            time.sleep(random.uniform(3, 5))
+            self.check_for_premium_redirect(recruiter_link)
+            logger.debug("Looking for 'Connect' button")
+            try:
+                connect_button = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((
+                        By.XPATH, 
+                        "//div[@role='button' and contains(@aria-label, 'connect') and @class='artdeco-dropdown__item artdeco-dropdown__item--is-dropdown ember-view full-width display-flex align-items-center']"
+                    ))
+                )
+            except Exception:
+                # If the <div> is not found, look for the standalone <button> version
+                logger.debug("Looking for the standalone 'Connect' button")
+                connect_button = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((
+                        By.XPATH, 
+                        "//button[contains(@class, 'artdeco-button') and contains(@class, 'artdeco-button--2') and contains(@class, 'artdeco-button--primary') and contains(@class, 'ember-view') and contains(@class, 'pvs-profile-actions__action') and (contains(@aria-label, 'connect') or contains(@aria-label, 'Invite'))]"
+                    ))
+                )
+
+            self.check_for_premium_redirect(recruiter_link)
+
+            logger.debug("Clicking 'Connect' button")            
+            actions = ActionChains(self.driver)
+            self.driver.execute_script("arguments[0].click();", connect_button)
+            self.check_for_premium_redirect(recruiter_link)
+
+            time.sleep(2)
+            
+            logger.debug("Looking for 'Add a note' button")
+            add_note_button = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//button[contains(@aria-label, "Add a note")]'))
+            )
+
+            logger.debug("Using ActionChains to click 'Add a note' button")
+            actions.move_to_element(add_note_button).click().perform()
+            logger.debug("'Add a note' button clicked")
+
+            logger.debug("Entering custom note")
+            note_textarea = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//textarea[@name="message"]'))
+            )
+
+            actions.move_to_element(note_textarea).click().perform()
+            note_textarea.send_keys(note_message)
+            logger.debug(f"Custom note entered: {note_message}")
+
+            time.sleep(1)
+
+            logger.debug("Looking for 'Send' button")
+            send_button = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((
+                    By.XPATH, 
+                    "//button[contains(@class, 'artdeco-button') and contains(@class, 'artdeco-button--2') and contains(@class, 'artdeco-button--primary') and contains(@class, 'ember-view') and contains(@class, 'ml1') and @aria-label='Send invitation']"
+                ))
+            )
+
+            logger.debug("Using ActionChains to click 'Send' button")
+            actions.move_to_element(send_button).click().perform()
+            logger.debug("Connection request sent successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to send connection request with a note: {e}")
+            raise
 
     def job_apply(self, job: Any):
         logger.debug(f"Starting job application for job: {job}")
@@ -232,12 +306,7 @@ class AIHawkEasyApplier:
             except NoSuchElementException:
                 logger.debug("See more button not found, skipping")
 
-            try:
-                description = self.driver.find_element(By.CLASS_NAME, 'jobs-description-content__text').text
-            except NoSuchElementException:
-                logger.debug("First class not found, checking for second class for premium members")
-                description = self.driver.find_element(By.CLASS_NAME, 'job-details-about-the-job-module__description').text
-
+            description = self.driver.find_element(By.CLASS_NAME, 'jobs-description-content__text').text
             logger.debug("Job description retrieved successfully")
             return description
         except NoSuchElementException:
@@ -354,16 +423,6 @@ class AIHawkEasyApplier:
 
         dropdown = element.find_element(By.TAG_NAME, 'select')
         select = Select(dropdown)
-        dropdown_id = dropdown.get_attribute('id')
-        if 'phoneNumber-Country' in dropdown_id:
-            country = self.resume_generator_manager.get_resume_country()
-            if country:
-                try:
-                    select.select_by_value(country)
-                    logger.debug(f"Selected phone country: {country}")
-                    return True
-                except NoSuchElementException:
-                    logger.warning(f"Country {country} not found in dropdown options")
 
         options = [option.text for option in select.options]
         logger.debug(f"Dropdown options found: {options}")
@@ -387,6 +446,7 @@ class AIHawkEasyApplier:
         if existing_answer:
             logger.debug(f"Found existing answer for question '{question_text}': {existing_answer}")
         else:
+
             logger.debug(f"No existing answer found, querying model for: {question_text}")
             existing_answer = self.gpt_answerer.answer_question_from_options(question_text, options)
             logger.debug(f"Model provided answer: {existing_answer}")
@@ -551,11 +611,11 @@ class AIHawkEasyApplier:
                     wrapped_lines = []
                     for line in text.splitlines():
 
-                        if stringWidth(line, font, font_size) > max_width:
+                        if utils.stringWidth(line, font, font_size) > max_width:
                             words = line.split()
                             new_line = ""
                             for word in words:
-                                if stringWidth(new_line + word + " ", font, font_size) <= max_width:
+                                if utils.stringWidth(new_line + word + " ", font, font_size) <= max_width:
                                     new_line += word + " "
                                 else:
                                     wrapped_lines.append(new_line.strip())
@@ -835,13 +895,6 @@ class AIHawkEasyApplier:
     def _save_questions_to_json(self, question_data: dict) -> None:
         output_file = 'answers.json'
         question_data['question'] = self._sanitize_text(question_data['question'])
-
-        # Check if the question already exists in the JSON file and bail out if it does
-        for item in self.all_data:
-            if self._sanitize_text(item['question']) == question_data['question'] and item['type'] == question_data['type']:
-                logger.debug(f"Question already exists in answers.json. Aborting save of: {item['question']}")
-                return
-
         logger.debug(f"Saving question data to JSON: {question_data}")
         try:
             try:
@@ -859,7 +912,6 @@ class AIHawkEasyApplier:
             data.append(question_data)
             with open(output_file, 'w') as f:
                 json.dump(data, f, indent=4)
-                self.all_data = data
             logger.debug("Question data saved successfully to JSON")
         except Exception:
             tb_str = traceback.format_exc()
